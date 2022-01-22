@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
 	STV0900/0903 Multistandard Broadcast Frontend driver
 	Copyright (C) Manu Abraham <abraham.manu@gmail.com>
 
 	Copyright (C) ST Microelectronics
 
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #ifndef __STV090x_REG_H
@@ -2104,6 +2092,14 @@
 #define STV090x_WIDTH_Px_TSDIL_ON_FIELD			1
 #define STV090x_OFFST_Px_TSRS_ON_FIELD			5
 #define STV090x_WIDTH_Px_TSRS_ON_FIELD			1
+#define STV090x_OFFST_Px_TSDESCRAMB_ON			4
+#define STV090x_WIDTH_Px_TSDESCRAMB_ON			1
+#define STV090x_OFFST_Px_TSFRAME_MODE			3
+#define STV090x_WIDTH_Px_TSFRAME_MODE			1
+#define STV090x_OFFST_Px_TS_DISABLE			2
+#define STV090x_WIDTH_Px_TS_DISABLE			1
+#define STV090x_OFFST_Px_TSOUT_NOSYNC			0
+#define STV090x_WIDTH_Px_TSOUT_NOSYNC			1
 
 #define STV090x_Px_TSCFGH(__x)				(0xF572 - (__x - 1) * 0x200)
 #define STV090x_P1_TSCFGH				STV090x_Px_TSCFGH(1)
@@ -2146,6 +2142,14 @@
 #define STV090x_WIDTH_Px_TSFIFO_EMBINDVB_FIELD		1
 #define STV090x_OFFST_Px_TSFIFO_DPUNACT_FIELD		1
 #define STV090x_WIDTH_Px_TSFIFO_DPUNACT_FIELD		1
+
+#define STV090x_Px_TSSYNC(__x)				(0xF575 - (__x - 1) * 0x200)
+#define STV090x_P1_TSSYNC				STV090x_Px_TSSYNC(1)
+#define STV090x_P2_TSSYNC				STV090x_Px_TSSYNC(2)
+#define STV090x_OFFST_Px_TSFIFO_FISCR3B			5
+#define STV090x_WIDTH_Px_TSFIFO_FISCR3B			2
+#define STV090x_OFFST_Px_TSFIFO_SYNCMODE		3
+#define STV090x_WIDTH_Px_TSFIFO_SYNCMODE		2
 
 #define STV090x_Px_TSINSDELH(__x)			(0xF576 - (__x - 1) * 0x200)
 #define STV090x_P1_TSINSDELH				STV090x_Px_TSINSDELH(1)
