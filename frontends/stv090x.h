@@ -1,22 +1,10 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
 	STV0900/0903 Multistandard Broadcast Frontend driver
 	Copyright (C) Manu Abraham <abraham.manu@gmail.com>
 
 	Copyright (C) ST Microelectronics
 
-	This program is free software; you can redistribute it and/or modify
-	it under the terms of the GNU General Public License as published by
-	the Free Software Foundation; either version 2 of the License, or
-	(at your option) any later version.
-
-	This program is distributed in the hope that it will be useful,
-	but WITHOUT ANY WARRANTY; without even the implied warranty of
-	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-	GNU General Public License for more details.
-
-	You should have received a copy of the GNU General Public License
-	along with this program; if not, write to the Free Software
-	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
 #ifndef __STV090x_H
@@ -69,6 +57,7 @@ struct stv090x_config {
 	enum stv090x_device	device;
 	enum stv090x_mode	demod_mode;
 	enum stv090x_clkmode	clk_mode;
+	enum stv090x_demodulator demod;
 
 	u32 xtal; /* default: 8000000 */
 	u8 address; /* default: 0x68 */
@@ -89,6 +78,8 @@ struct stv090x_config {
 
 	bool diseqc_envelope_mode;
 
+	/* Hook for Lock LED */
+	void (*set_lock_led) (struct dvb_frontend *fe, int offon);
 	int (*tuner_init) (struct dvb_frontend *fe);
 	int (*tuner_sleep) (struct dvb_frontend *fe);
 	int (*tuner_set_mode) (struct dvb_frontend *fe, enum tuner_mode mode);
@@ -102,16 +93,18 @@ struct stv090x_config {
 	int (*tuner_get_status) (struct dvb_frontend *fe, u32 *status);
 	void (*tuner_i2c_lock) (struct dvb_frontend *fe, int lock);
 
-        /* dir = 0 -> output, dir = 1 -> input/open-drain */
-	int (*set_gpio)(struct dvb_frontend *fe, u8 gpio, u8 dir, u8 value,
+	/* dir = 0 -> output, dir = 1 -> input/open-drain */
+	int (*set_gpio) (struct dvb_frontend *fe, u8 gpio, u8 dir, u8 value,
 			u8 xor_value);
+
+	struct dvb_frontend* (*get_dvb_frontend)(struct i2c_client *i2c);
 };
 
-#if defined(CONFIG_DVB_STV090x) || (defined(CONFIG_DVB_STV090x_MODULE) && defined(MODULE))
+#if IS_REACHABLE(CONFIG_DVB_STV090x)
 
-extern struct dvb_frontend *stv090x_attach(struct stv090x_config *config,
-					   struct i2c_adapter *i2c,
-					   enum stv090x_demodulator demod);
+struct dvb_frontend *stv090x_attach(struct stv090x_config *config,
+				    struct i2c_adapter *i2c,
+				    enum stv090x_demodulator demod);
 
 #else
 
