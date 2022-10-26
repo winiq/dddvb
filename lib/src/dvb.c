@@ -111,6 +111,7 @@ static int set_fe_input(struct dddvb_fe *fe, uint32_t fr,
 		{ .cmd = DTV_INVERSION, .u.data = INVERSION_AUTO },
 		{ .cmd = DTV_SYMBOL_RATE, .u.data = sr },
 		{ .cmd = DTV_INNER_FEC, .u.data = FEC_AUTO },
+		{ .cmd = DTV_ROLLOFF, .u.data = ROLLOFF_AUTO },
 	};		
 	struct dtv_properties c;
 	int ret;
@@ -181,7 +182,16 @@ static int diseqc(int fd, int sat, int hor, int band)
 	return 0;
 }
 
-static int set_en50494(struct dddvb_fe *fe, uint32_t freq, uint32_t sr, 
+static int set_vol_tone(int fd, int hor, int band)
+{
+	if (ioctl(fd, FE_SET_TONE, band ? SEC_TONE_ON : SEC_TONE_OFF))
+		perror("FE_SET_TONE failed");
+	if (ioctl(fd, FE_SET_VOLTAGE, hor ? SEC_VOLTAGE_18 : SEC_VOLTAGE_13) == -1)
+		perror("FE_SET_VOLTAGE failed");
+	dbgprintf(DEBUG_DVB, "set_vol_tone hor=%u, band=%u\n", hor, band);
+}
+
+static int set_en50494(struct dddvb_fe *fe, uint32_t freq_khz, uint32_t sr, 
 		       int sat, int hor, int band, 
 		       uint32_t slot, uint32_t ubfreq,
 		       fe_delivery_system_t ds)
@@ -193,8 +203,10 @@ static int set_en50494(struct dddvb_fe *fe, uint32_t freq, uint32_t sr,
 	uint16_t t;
 	uint32_t input = 3 & (sat >> 6);
 	int fd = fe->fd;
+	uint32_t freq = (freq_khz + 2000) / 4000;
+	int32_t fdiff = freq_khz - freq * 1000;
 
-	t = (freq + ubfreq + 2) / 4 - 350;
+	t = (freq_khz / 1000 + ubfreq + 2) / 4 - 350;
  	hor &= 1;
 
 	cmd.msg[3] = ((t & 0x0300) >> 8) | 
@@ -218,7 +230,7 @@ static int set_en50494(struct dddvb_fe *fe, uint32_t freq, uint32_t sr,
 		  cmd.msg[0], cmd.msg[1], cmd.msg[2], cmd.msg[3], cmd.msg[4]);
 }
 
-static int set_en50607(struct dddvb_fe *fe, uint32_t freq, uint32_t sr, 
+static int set_en50607(struct dddvb_fe *fe, uint32_t freq_khz, uint32_t sr,
 		       int sat, int hor, int band, 
 		       uint32_t slot, uint32_t ubfreq,
 		       fe_delivery_system_t ds)
@@ -227,6 +239,8 @@ static int set_en50607(struct dddvb_fe *fe, uint32_t freq, uint32_t sr,
 		.msg = {0x70, 0x00, 0x00, 0x00, 0x00},
 		.msg_len = 4
 	};
+	uint32_t freq = (freq_khz + 500) / 1000;
+	int32_t fdiff = freq_khz - freq * 1000;
 	uint32_t t = freq - 100;
 	uint32_t input = 3 & (sat >> 6);
 	int fd = fe->fd;
@@ -250,11 +264,11 @@ static int set_en50607(struct dddvb_fe *fe, uint32_t freq, uint32_t sr,
 	if (ioctl(fd, FE_SET_VOLTAGE, SEC_VOLTAGE_13) == -1)
 		perror("FE_SET_VOLTAGE failed");
 
-	set_fe_input(fe, ubfreq * 1000, sr, ds, input);
+	set_fe_input(fe, ubfreq * 1000 + fdiff, sr, ds, input);
 	dbgprintf(DEBUG_DVB, "EN50607 %02x %02x %02x %02x\n", 
 		  cmd.msg[0], cmd.msg[1], cmd.msg[2], cmd.msg[3]);
-	dbgprintf(DEBUG_DVB, "EN50607 freq %u sr %u hor %u\n", 
-		  freq, sr, hor);
+	dbgprintf(DEBUG_DVB, "EN50607 freq %u ubfreq %u fdiff %d sr %u hor %u\n", 
+		  freq, ubfreq, fdiff, sr, hor);
 }
 
 
@@ -288,14 +302,20 @@ static int tune_sat(struct dddvb_fe *fe)
 			freq = lofs - freq;
 	} 
 #endif
-
 	if (freq > 3000000) {
 		if (lofs)
 			hi = (freq > lofs) ? 1 : 0;
-		if (hi) 
-			freq -= fe->lof2[lnbc];
-		else
-			freq -= fe->lof1[lnbc];
+		if (lofs > 10000000) {
+			if (hi)
+				freq -= fe->lof2[lnbc];
+			else
+				freq -= fe->lof1[lnbc];
+		} else {
+			if (hi)
+				freq = fe->lof2[lnbc] - freq;
+			else
+				freq = fe->lof1[lnbc] - freq;
+		}
 	}
 	dbgprintf(DEBUG_DVB, "tune_sat IF=%u\n", freq);
 	if (fe->first) {
@@ -308,13 +328,13 @@ static int tune_sat(struct dddvb_fe *fe)
 	dbgprintf(DEBUG_DVB, "scif_type = %u\n", fe->scif_type);
 	if (fe->scif_type == 1) { 
 		pthread_mutex_lock(&fe->dd->uni_lock);
-		set_en50494(fe, freq / 1000, fe->param.param[PARAM_SR],
+		set_en50494(fe, freq, fe->param.param[PARAM_SR],
 			    lnb, fe->param.param[PARAM_POL], hi,
 			    fe->scif_slot, fe->scif_freq, ds);
 		pthread_mutex_unlock(&fe->dd->uni_lock);
 	} else if (fe->scif_type == 2) {
 		pthread_mutex_lock(&fe->dd->uni_lock);
-		set_en50607(fe, freq / 1000, fe->param.param[PARAM_SR],
+		set_en50607(fe, freq, fe->param.param[PARAM_SR],
 			    lnb, fe->param.param[PARAM_POL], hi,
 			    fe->scif_slot, fe->scif_freq, ds);
 		pthread_mutex_unlock(&fe->dd->uni_lock);
@@ -324,10 +344,13 @@ static int tune_sat(struct dddvb_fe *fe)
 		if (input != DDDVB_UNDEF) {
 			input = 3 & (input >> 6);
 			dbgprintf(DEBUG_DVB, "input = %u\n", input);
+			set_property(fe->fd, DTV_INPUT, input);
 		}
-		diseqc(fe->fd, lnb, fe->param.param[PARAM_POL], hi);
+		if (fe->scif_type == 3)
+			set_vol_tone(fe->fd, fe->param.param[PARAM_POL], hi);
+		else
+			diseqc(fe->fd, lnb, fe->param.param[PARAM_POL], hi);
 		set_fe_input(fe, freq, fe->param.param[PARAM_SR], ds, input);
-		//set_fe_input(fe, freq, fe->param.param[PARAM_SR], ds, DDDVB_UNDEF);
 	}
 }
 

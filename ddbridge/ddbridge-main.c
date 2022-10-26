@@ -283,11 +283,17 @@ static int __devinit ddb_probe(struct pci_dev *pdev,
 
 	pci_set_master(pdev);
 
+#if (KERNEL_VERSION(5, 18, 0) <= LINUX_VERSION_CODE)
+	if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(64)))
+		if (dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32)))
+#else
 	if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(64))) {
 		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(64));
 	} else if (!pci_set_dma_mask(pdev, DMA_BIT_MASK(32))) {
 		pci_set_consistent_dma_mask(pdev, DMA_BIT_MASK(32));
-	} else return -ENODEV;
+	} else
+#endif
+		return -ENODEV;
 
 	dev = vzalloc(sizeof(*dev));
 	if (!dev)
@@ -309,7 +315,6 @@ static int __devinit ddb_probe(struct pci_dev *pdev,
 	dev->link[0].dev = dev;
 	dev->link[0].info = get_ddb_info(id->vendor, id->device,
 					 id->subvendor, pdev->subsystem_device);
-	dev_info(dev->dev, "device name: %s\n", dev->link[0].info->name);
 
 	dev->regs_len = pci_resource_len(dev->pdev, 0);
 	dev->regs = ioremap(pci_resource_start(dev->pdev, 0),
@@ -329,16 +334,12 @@ static int __devinit ddb_probe(struct pci_dev *pdev,
 	dev->link[0].ids.hwid = ddbreadl(dev, 0);
 	dev->link[0].ids.regmapid = ddbreadl(dev, 4);
 
-	dev_info(dev->dev, "HW %08x REGMAP %08x FW %u.%u\n",
-		 dev->link[0].ids.hwid, dev->link[0].ids.regmapid,
-		 (dev->link[0].ids.hwid & 0xff0000) >> 16,
-		 dev->link[0].ids.hwid & 0xffff);
 	if ((dev->link[0].ids.hwid & 0xffffff) <
 	    dev->link[0].info->hw_min) {
 		u32 min = dev->link[0].info->hw_min;
 
 		dev_err(dev->dev, "Update firmware to at least version %u.%u to ensure full functionality!\n",
-			 (min & 0xff0000) >> 16, min & 0xffff);
+			(min & 0xff0000) >> 16, min & 0xffff);
 	}
 
 	if (dev->link[0].info->ns_num) {
@@ -349,26 +350,37 @@ static int __devinit ddb_probe(struct pci_dev *pdev,
 	if (dev->link[0].info->type != DDB_MOD)
 		ddbwritel(dev, 0, DMA_BASE_WRITE);
 
-	if (dev->link[0].info->type == DDB_MOD
-	    && dev->link[0].info->version <= 1) {
+	if (dev->link[0].info->type == DDB_MOD &&
+	    dev->link[0].info->version <= 1) {
 		if (ddbreadl(dev, 0x1c) == 4)
 			dev->link[0].info =
 				get_ddb_info(0xdd01, 0x0201, 0xdd01, 0x0004);
 	}
-	if (dev->link[0].info->type == DDB_MOD
-	    && dev->link[0].info->version == 2) {
+	if (dev->link[0].info->type == DDB_MOD &&
+	    dev->link[0].info->version == 2) {
 		u32 lic = ddbreadl(dev, 0x1c) & 7;
+
+		if (dev->link[0].ids.revision == 1)
+			lic = ddbreadl(dev, 0x260) >> 24;
 
 		switch (lic) {
 		case 0:
+		case 4:
 			dev->link[0].info =
 				get_ddb_info(0xdd01, 0x0210, 0xdd01, 0x0000);
 			break;
 		case 1:
+		case 8:
 			dev->link[0].info =
 				get_ddb_info(0xdd01, 0x0210, 0xdd01, 0x0003);
 			break;
+		case 2:
+		case 24:
+			dev->link[0].info =
+				get_ddb_info(0xdd01, 0x0210, 0xdd01, 0x0001);
+			break;
 		case 3:
+		case 16:
 			dev->link[0].info =
 				get_ddb_info(0xdd01, 0x0210, 0xdd01, 0x0002);
 			break;
@@ -376,6 +388,12 @@ static int __devinit ddb_probe(struct pci_dev *pdev,
 			break;
 		}
 	}
+	dev_info(dev->dev, "device name: %s\n", dev->link[0].info->name);
+	dev_info(dev->dev, "HW %08x REGMAP %08x FW %u.%u\n",
+		 dev->link[0].ids.hwid, dev->link[0].ids.regmapid,
+		 (dev->link[0].ids.hwid & 0xff0000) >> 16,
+		 dev->link[0].ids.hwid & 0xffff);
+
 	stat = ddb_irq_init(dev);
 	if (stat < 0)
 		goto fail0;
@@ -399,6 +417,12 @@ fail:
 /****************************************************************************/
 /****************************************************************************/
 /****************************************************************************/
+
+#ifndef PCI_DEVICE_SUB
+#define PCI_DEVICE_SUB(vend, dev, subvend, subdev) \
+	.vendor = (vend), .device = (dev), \
+		.subvendor = (subvend), .subdevice = (subdev)
+#endif
 
 #define DDB_DEVICE_ANY(_device) \
 	{ PCI_DEVICE_SUB(0xdd01, _device, 0xdd01, PCI_ANY_ID) }
@@ -433,7 +457,6 @@ static const struct pci_device_id ddb_id_table[] __devinitconst = {
 	{0}
 };
 MODULE_DEVICE_TABLE(pci, ddb_id_table);
-
 
 static pci_ers_result_t ddb_pci_slot_reset(struct pci_dev *dev)
 {
@@ -473,7 +496,6 @@ static const struct pci_error_handlers ddb_error = {
 	.slot_reset = ddb_pci_slot_reset,
 	.resume = ddb_pci_resume,
 };
-
 
 static struct pci_driver ddb_pci_driver = {
 	.name        = "ddbridge",
